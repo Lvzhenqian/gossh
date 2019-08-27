@@ -112,9 +112,10 @@ func (t *SSHTerminal) interactiveSession() error {
 		return err
 	}
 
-	termType := os.Getenv("TERM")
-	if termType == "" {
-		termType = "xterm-256color"
+	termType,ok:= os.LookupEnv("GosshTERM")
+
+	if !ok{
+		termType = "linux"
 	}
 
 	err = t.Session.RequestPty(termType, termHeight, termWidth, ssh.TerminalModes{})
