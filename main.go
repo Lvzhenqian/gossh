@@ -2,26 +2,38 @@ package main
 
 import (
 	"encoding/base64"
+	"flag"
 	"fmt"
 	"github.com/manifoldco/promptui"
 	"github.com/mewbak/gopass"
+	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
 	"gossh/conf"
 	"gossh/sshtool"
 	"log"
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 const DefaultConfig = ".gossh.yaml"
 
 var (
+	Ssh        sshtool.SshClient
 	ConfigPath string
 	KEY        []byte
 	cfg        conf.Config
+
+	s bool
+	h bool
 )
 
 func init() {
+	// 创建一个terminal 实例给到ssh接口
+	terminal := new(sshtool.SSHTerminal)
+	Ssh = terminal
 	// 读取当前运行用户信息
 	use, e := user.Current()
 	if e != nil {
@@ -50,6 +62,20 @@ func init() {
 		cfg = conf.Read(ConfigPath)
 	}
 
+	flag.BoolVar(&h, "h", false, "显示这个帮助页面")
+	flag.BoolVar(&s, "s", false, "查看当前有那些主机，并显示对应的Index ID")
+	flag.Usage = Usage
+}
+
+func Usage() {
+	fmt.Fprintf(os.Stderr, `使用说明：
+  gossh run@index command  对index的主机执行某条命令
+  gossh send@index src dst   推送src到index主机的dst位置
+  gossh get@index src dst   从index主机src位置拉取到本地dst位置
+其他参数:
+`)
+
+	flag.PrintDefaults()
 }
 
 func EncodePassword(s string) string {
@@ -83,7 +109,7 @@ func AddOneConfig() (name string, e error) {
 	}
 	fmt.Printf("用户名：")
 	fmt.Scanln(&c.Data.Username)
-	if p, e := gopass.GetPass("密码："); e != nil {
+	if p, e := gopass.GetPass("密码："); e != nil || p == "" {
 		c.Data.Password = ""
 	} else {
 		c.Data.Password = EncodePassword(p)
@@ -110,7 +136,7 @@ func ShowList() conf.SshConfig {
 	var err error
 	// 转为字符串slice
 	var list []string
-	list = append(list,"exit")
+	list = append(list, "exit")
 	if len(cfg) == 0 {
 		fmt.Println("配置文件为空，请先填写一个！！")
 		n, err := AddOneConfig()
@@ -152,7 +178,7 @@ func ShowList() conf.SshConfig {
 		log.Fatal(err)
 		return conf.SshConfig{}
 	}
-	if result == "exit"{
+	if result == "exit" {
 		os.Exit(0)
 	}
 	// 输出对应的sshConfig
@@ -165,26 +191,119 @@ func ShowList() conf.SshConfig {
 	return conf.SshConfig{}
 }
 
-func NewLogin(c conf.SshConfig) {
-	var Ssh sshtool.SshClient
+func NewClient(c conf.SshConfig) *ssh.Client {
 	var password string
 	if c.Password != "" {
 		password = DecodePassword(c.Password)
 	}
-	terminal := new(sshtool.SSHTerminal)
-	Ssh = terminal
 	client, err := sshtool.NewClient(c.IP, c.Port, c.Username, password, c.PrivateKey)
 	if err != nil {
 		panic(err)
 	}
-	defer client.Close()
-	e := Ssh.Login(client)
-	if e != nil {
-		fmt.Println("main error: ", e)
+	return client
+}
+
+func GetConfig(keyword string) (string, conf.SshConfig) {
+	s := strings.Split(keyword, "@")
+	index, err := strconv.Atoi(s[1])
+	if err != nil {
+		panic("请输入对应的配置文件ID!!")
+	}
+	return s[0], cfg[index].Data
+}
+
+func ShowIdAndName() {
+	for i, v := range cfg {
+		fmt.Printf("index：%d name: %s \n", i, v.Name)
+	}
+}
+
+func Get(src, dst string, c *ssh.Client) error {
+	sftpCli, err := sftp.NewClient(c)
+	if err != nil {
+		return err
+	}
+	defer sftpCli.Close()
+	state, Serr := sftpCli.Stat(src)
+	if Serr != nil {
+		return Serr
+	}
+	if state.IsDir() {
+		return Ssh.GetDir(src, dst, c)
+	} else {
+		Dstat, _ := os.Stat(dst)
+		if Dstat.IsDir() {
+			return Ssh.GetFile(src, filepath.Join(dst, filepath.Base(src)), c)
+		} else {
+			return Ssh.GetFile(src, dst, c)
+		}
+	}
+}
+
+func Push(src, dst string, c *ssh.Client) error {
+	Sstate, _ := os.Stat(src)
+	if Sstate.IsDir() {
+		return Ssh.PushDir(src, dst, c)
+	} else {
+		sftpCli, err := sftp.NewClient(c)
+		if err != nil {
+			return err
+		}
+		defer sftpCli.Close()
+		Dstat, err := sftpCli.Stat(dst)
+		if err != nil{
+			panic(err)
+		}
+		if Dstat.IsDir() {
+			return Ssh.PushFile(src, filepath.Join(dst, filepath.Base(src)), c)
+		} else {
+			return Ssh.PushFile(src, dst, c)
+		}
 	}
 }
 
 func main() {
-	cli := ShowList()
-	NewLogin(cli)
+	flag.Parse()
+	args := flag.Args()
+	//fmt.Println(args)
+	if h {
+		flag.Usage()
+		os.Exit(0)
+	}
+	if s {
+		ShowIdAndName()
+		os.Exit(0)
+	}
+
+	if flag.NArg() == 0 {
+		conf := ShowList()
+		cli := NewClient(conf)
+		defer cli.Close()
+		Ssh.Login(cli)
+	} else {
+		key, c := GetConfig(args[0])
+		cli := NewClient(c)
+		defer cli.Close()
+		switch strings.ToLower(key) {
+		case "send":
+			err := Push(args[1], args[2], cli)
+			if err != nil {
+				panic(err)
+			}
+		case "get":
+			err := Get(args[1], args[2], cli)
+			if err != nil {
+				panic(err)
+			}
+		case "run":
+			cmd := strings.Join(args[1:], " ")
+			err := Ssh.Run(cmd, cli)
+			if err != nil {
+				log.Fatal(err)
+			}
+		default:
+			fmt.Println("错误的关键字，请按下列例子来使用！！")
+			Usage()
+		}
+	}
 }
