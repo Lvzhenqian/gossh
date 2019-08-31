@@ -241,9 +241,16 @@ func Get(src, dst string, c *ssh.Client) error {
 }
 
 func Push(src, dst string, c *ssh.Client) error {
-	Sstate, _ := os.Stat(src)
+	Spath,err := filepath.Abs(src)
+	if err != nil {
+		panic(err)
+	}
+	Sstate, Serr := os.Stat(Spath)
+	if Serr != nil{
+		panic(err)
+	}
 	if Sstate.IsDir() {
-		return Ssh.PushDir(src, dst, c)
+		return Ssh.PushDir(Spath, dst, c)
 	} else {
 		sftpCli, err := sftp.NewClient(c)
 		if err != nil {
@@ -255,9 +262,9 @@ func Push(src, dst string, c *ssh.Client) error {
 			panic(err)
 		}
 		if Dstat.IsDir() {
-			return Ssh.PushFile(src, filepath.Join(dst, filepath.Base(src)), c)
+			return Ssh.PushFile(Spath, filepath.Join(dst, filepath.Base(Spath)), c)
 		} else {
-			return Ssh.PushFile(src, dst, c)
+			return Ssh.PushFile(Spath, dst, c)
 		}
 	}
 }
