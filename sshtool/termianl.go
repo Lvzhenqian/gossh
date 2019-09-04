@@ -357,7 +357,7 @@ func (t *SSHTerminal) GetDir(src string, dst string, c *ssh.Client) error {
 				panic(walker.Err())
 			case stats.IsDir():
 
-				os.Mkdir(p,0)
+				os.Mkdir(p,0755)
 			default:
 				files,_ :=c.Open(w.Path())
 				defer files.Close()
