@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/manifoldco/promptui"
 	"github.com/mewbak/gopass"
-	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	"gossh/conf"
 	"gossh/sshtool"
@@ -218,57 +217,6 @@ func ShowIdAndName() {
 	}
 }
 
-func Get(src, dst string, c *ssh.Client) error {
-	sftpCli, err := sftp.NewClient(c)
-	if err != nil {
-		return err
-	}
-	defer sftpCli.Close()
-	state, Serr := sftpCli.Stat(src)
-	if Serr != nil {
-		return Serr
-	}
-	if state.IsDir() {
-		return Ssh.GetDir(src, dst, c)
-	} else {
-		Dstat, _ := os.Stat(dst)
-		if Dstat.IsDir() {
-			return Ssh.GetFile(src, filepath.Join(dst, filepath.Base(src)), c)
-		} else {
-			return Ssh.GetFile(src, dst, c)
-		}
-	}
-}
-
-func Push(src, dst string, c *ssh.Client) error {
-	Spath,err := filepath.Abs(src)
-	if err != nil {
-		panic(err)
-	}
-	Sstate, Serr := os.Stat(Spath)
-	if Serr != nil{
-		panic(err)
-	}
-	if Sstate.IsDir() {
-		return Ssh.PushDir(Spath, dst, c)
-	} else {
-		sftpCli, err := sftp.NewClient(c)
-		if err != nil {
-			return err
-		}
-		defer sftpCli.Close()
-		Dstat, err := sftpCli.Stat(dst)
-		if err != nil{
-			panic(err)
-		}
-		if Dstat.IsDir() {
-			return Ssh.PushFile(Spath, filepath.Join(dst, filepath.Base(Spath)), c)
-		} else {
-			return Ssh.PushFile(Spath, dst, c)
-		}
-	}
-}
-
 func main() {
 	flag.Parse()
 	args := flag.Args()
@@ -293,12 +241,12 @@ func main() {
 		defer cli.Close()
 		switch strings.ToLower(key) {
 		case "send":
-			err := Push(args[1], args[2], cli)
+			err := Ssh.Push(args[1], args[2], cli)
 			if err != nil {
 				panic(err)
 			}
 		case "get":
-			err := Get(args[1], args[2], cli)
+			err := Ssh.Get(args[1], args[2], cli)
 			if err != nil {
 				panic(err)
 			}

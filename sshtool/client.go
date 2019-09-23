@@ -46,10 +46,8 @@ func NewClient(ip string,port int,user string,password string,privatekey string)
 type SshClient interface {
 	Login(c *ssh.Client) error
 	Run(cmd string,c *ssh.Client) error
-	PushFile(src string,dst string,c *ssh.Client) error
-	GetFile(src string,dst string,c *ssh.Client) error
-	PushDir(src string,dst string,c *ssh.Client) error
-	GetDir(src string,dst string,c *ssh.Client) error
+	Get(src,dst string,c *ssh.Client) error
+	Push(src,dst string,c *ssh.Client) error
 }
 
 

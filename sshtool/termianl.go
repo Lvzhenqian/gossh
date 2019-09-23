@@ -29,15 +29,15 @@ type SSHTerminal struct {
 
 func TotalSize(paths string) int64 {
 	var Ret int64
-	stat,_ := os.Stat(paths)
-	switch  {
+	stat, _ := os.Stat(paths)
+	switch {
 	case stat.IsDir():
 		filepath.Walk(paths, func(p string, info os.FileInfo, err error) error {
-			if info.IsDir(){
+			if info.IsDir() {
 				return nil
 			} else {
-				s,_ := os.Stat(p)
-				Ret = Ret +s.Size()
+				s, _ := os.Stat(p)
+				Ret = Ret + s.Size()
 				return nil
 			}
 		})
@@ -112,9 +112,9 @@ func (t *SSHTerminal) interactiveSession() error {
 		return err
 	}
 
-	termType,ok:= os.LookupEnv("GosshTERM")
+	termType, ok := os.LookupEnv("GosshTERM")
 
-	if !ok{
+	if !ok {
 		termType = "linux"
 	}
 
@@ -167,26 +167,26 @@ func (t *SSHTerminal) interactiveSession() error {
 	return nil
 }
 
-func (t *SSHTerminal)Run(cmd string,c *ssh.Client) error  {
-	session ,SessionErr := c.NewSession()
+func (t *SSHTerminal) Run(cmd string, c *ssh.Client) error {
+	session, SessionErr := c.NewSession()
 	defer session.Close()
-	if SessionErr != nil{
+	if SessionErr != nil {
 		return SessionErr
 	}
 	reader, ReaderErr := session.StdoutPipe()
-	if ReaderErr != nil{
+	if ReaderErr != nil {
 		return ReaderErr
 	}
 	scanner := bufio.NewScanner(reader)
 	go func() {
 		for scanner.Scan() {
-			if _,e := fmt.Fprintln(os.Stdout,scanner.Text());e != nil{
+			if _, e := fmt.Fprintln(os.Stdout, scanner.Text()); e != nil {
 				continue
 			}
 		}
 	}()
 
-	if err:=session.Run(cmd); err != nil {
+	if err := session.Run(cmd); err != nil {
 		return err
 	}
 	return nil
@@ -198,35 +198,43 @@ func (t *SSHTerminal) Login(c *ssh.Client) error {
 		panic(e)
 	}
 	defer session.Close()
-	s := SSHTerminal{Session:session}
+	s := SSHTerminal{Session: session}
 	return s.interactiveSession()
 }
 
 func (t *SSHTerminal) PushFile(src string, dst string, c *ssh.Client) error {
+	var (
+		Realsrc	string
+		Realdst string
+	)
 	sftpClient, err := sftp.NewClient(c)
 	defer sftpClient.Close()
+	//Get RealPath
+	Realsrc = LocalRealPath(src)
+	Realdst = RemoteRealpath(dst,sftpClient)
+
 	// open file
-	srcFile, err := os.Open(src)
+	srcFile, err := os.Open(Realsrc)
 	defer srcFile.Close()
 	if err != nil {
 		return err
 	}
-	dstFile, err := sftpClient.Create(dst)
+	dstFile, err := sftpClient.Create(Realdst)
 	defer dstFile.Close()
 	//bar
-	SrcStat,err := srcFile.Stat()
+	SrcStat, err := srcFile.Stat()
 	if err != nil {
 		return err
 	}
 	bar := pb.New64(SrcStat.Size()).SetUnits(pb.U_BYTES)
 	bar.ShowSpeed = true
-	bar.ShowTimeLeft=true
-	bar.ShowPercent=true
-	bar.Prefix(path.Base(src))
+	bar.ShowTimeLeft = true
+	bar.ShowPercent = true
+	bar.Prefix(path.Base(Realsrc))
 	bar.Start()
-	r:=bar.NewProxyReader(srcFile)
+	r := bar.NewProxyReader(srcFile)
 	defer bar.Finish()
-	if _, err :=io.Copy(dstFile,r);err != nil {
+	if _, err := io.Copy(dstFile, r); err != nil {
 		return err
 	}
 
@@ -234,35 +242,41 @@ func (t *SSHTerminal) PushFile(src string, dst string, c *ssh.Client) error {
 }
 
 func (t *SSHTerminal) GetFile(src string, dst string, c *ssh.Client) error {
+	var (
+		Realsrc string
+		Realdst	string
+	)
 	// new SftpClient
 	sftpClient, err := sftp.NewClient(c)
 	defer sftpClient.Close()
+	Realsrc = RemoteRealpath(src,sftpClient)
+	Realdst = LocalRealPath(dst)
 	if err != nil {
 		return err
 	}
 	// open SrcFile
-	srcFile, err := sftpClient.Open(src)
+	srcFile, err := sftpClient.Open(Realsrc)
 	defer srcFile.Close()
 	if err != nil {
 		return err
 	}
 	//bar
-	SrcStat,err :=srcFile.Stat()
+	SrcStat, err := srcFile.Stat()
 	if err != nil {
 		return err
 	}
 	bar := pb.New64(SrcStat.Size()).SetUnits(pb.U_BYTES)
 	bar.ShowSpeed = true
-	bar.ShowTimeLeft=true
-	bar.ShowPercent=true
-	bar.Prefix(path.Base(src))
+	bar.ShowTimeLeft = true
+	bar.ShowPercent = true
+	bar.Prefix(path.Base(Realsrc))
 	bar.Start()
 	// open DstFile
-	dstFile, err := os.Create(dst)
+	dstFile, err := os.Create(Realdst)
 	defer dstFile.Close()
-	w := io.MultiWriter(bar,dstFile)
+	w := io.MultiWriter(bar, dstFile)
 	defer bar.Finish()
-	if _,err := srcFile.WriteTo(w);err != nil {
+	if _, err := srcFile.WriteTo(w); err != nil {
 		return err
 	}
 
@@ -270,22 +284,28 @@ func (t *SSHTerminal) GetFile(src string, dst string, c *ssh.Client) error {
 }
 
 func (t *SSHTerminal) PushDir(src string, dst string, c *ssh.Client) error {
+	var (
+		Realsrc	string
+		Realdst	string
+	)
 	sftpClient, err := sftp.NewClient(c)
 	defer sftpClient.Close()
 	if err != nil {
 		return err
 	}
+	Realsrc = LocalRealPath(src)
+	Realdst = RemoteRealpath(dst,sftpClient)
 
-	root,dir := path.Split(src)
-	if err:=os.Chdir(root);err != nil{
+	root, dir := path.Split(Realsrc)
+	if err := os.Chdir(root); err != nil {
 		return err
 	}
-	size := TotalSize(src)
+	size := TotalSize(Realsrc)
 	bar := pb.New64(size).SetUnits(pb.U_BYTES)
 	bar.ShowSpeed = true
-	bar.ShowTimeLeft=true
-	bar.ShowPercent=true
-	bar.Prefix(path.Base(src))
+	bar.ShowTimeLeft = true
+	bar.ShowPercent = true
+	bar.Prefix(path.Base(Realsrc))
 	bar.Start()
 	defer bar.Finish()
 	var wg sync.WaitGroup
@@ -294,43 +314,49 @@ func (t *SSHTerminal) PushDir(src string, dst string, c *ssh.Client) error {
 		case info.IsDir():
 			sftpClient.Mkdir(p)
 		default:
-			dstfile := path.Join(dst,p)
+			dstfile := path.Join(Realdst, p)
 			wg.Add(1)
-			go func(wgroup *sync.WaitGroup,b *pb.ProgressBar, Srcfile string,Dstfile string) {
+			go func(wgroup *sync.WaitGroup, b *pb.ProgressBar, Srcfile string, Dstfile string) {
 				defer wgroup.Done()
-				s,_ := os.Open(Srcfile)
+				s, _ := os.Open(Srcfile)
 				defer s.Close()
-				d,_ := sftpClient.Create(Dstfile)
+				d, _ := sftpClient.Create(Dstfile)
 				defer d.Close()
-				i,_ :=io.Copy(d,s)
+				i, _ := io.Copy(d, s)
 				b.Add64(i)
-			}(&wg,bar,p,dstfile)
+			}(&wg, bar, p, dstfile)
 		}
 		wg.Wait()
 		return err
 	})
 
-	if WalkErr !=nil{
+	if WalkErr != nil {
 		return err
 	}
 	return nil
 }
 
 func (t *SSHTerminal) GetDir(src string, dst string, c *ssh.Client) error {
+	var (
+		Realsrc 	string
+		Realdst		string
+	)
 	// new SftpClient
 	sftpClient, err := sftp.NewClient(c)
 	defer sftpClient.Close()
 	if err != nil {
 		return err
 	}
-	walker :=sftpClient.Walk(src)
+	Realsrc = RemoteRealpath(src,sftpClient)
+	Realdst = LocalRealPath(dst)
+	walker := sftpClient.Walk(Realsrc)
 	//获取远程目录的大小
 	size := func(c *sftp.Client) int64 {
 		var ret int64
-		TotalWalk := c.Walk(src)
-		for TotalWalk.Step(){
+		TotalWalk := c.Walk(Realsrc)
+		for TotalWalk.Step() {
 			stat := TotalWalk.Stat()
-			if !stat.IsDir(){
+			if !stat.IsDir() {
 				ret += stat.Size()
 			}
 		}
@@ -338,36 +364,35 @@ func (t *SSHTerminal) GetDir(src string, dst string, c *ssh.Client) error {
 	}(sftpClient)
 	bar := pb.New64(size).SetUnits(pb.U_BYTES)
 	bar.ShowSpeed = true
-	bar.ShowTimeLeft=true
-	bar.ShowPercent=true
-	bar.Prefix(path.Base(src))
+	bar.ShowTimeLeft = true
+	bar.ShowPercent = true
+	bar.Prefix(path.Base(Realsrc))
 	bar.Start()
 	defer bar.Finish()
 	//同步远程目录到本地
 	var wg sync.WaitGroup
-	base := path.Dir(src)
+	base := path.Dir(Realsrc)
 	wg.Add(1)
-	go func(w *fs.Walker,c *sftp.Client,g *sync.WaitGroup,b *pb.ProgressBar) {
-		for w.Step(){
-			pdst := strings.TrimPrefix(w.Path(),base)
-			p := path.Join(dst,pdst)
+	go func(w *fs.Walker, c *sftp.Client, g *sync.WaitGroup, b *pb.ProgressBar) {
+		for w.Step() {
+			pdst := strings.TrimPrefix(w.Path(), base)
+			p := path.Join(Realdst, pdst)
 			stats := w.Stat()
 			switch {
 			case walker.Err() != nil:
 				panic(walker.Err())
 			case stats.IsDir():
-
-				os.Mkdir(p,0755)
+				os.Mkdir(p, 0755)
 			default:
-				files,_ :=c.Open(w.Path())
+				files, _ := c.Open(w.Path())
 				defer files.Close()
-				ds,errs := os.Create(p)
-				if errs != nil{
+				ds, errs := os.Create(p)
+				if errs != nil {
 					panic(errs)
 				}
 				defer ds.Close()
 				//io.Copy(ds,file)
-				i,e:= io.Copy(ds,files)
+				i, e := io.Copy(ds, files)
 				if e != nil {
 					fmt.Println(e)
 				}
@@ -375,7 +400,94 @@ func (t *SSHTerminal) GetDir(src string, dst string, c *ssh.Client) error {
 			}
 		}
 		g.Done()
-	}(walker,sftpClient,&wg,bar)
+	}(walker, sftpClient, &wg, bar)
 	wg.Wait()
 	return nil
+}
+
+func (t *SSHTerminal) Get(src, dst string, c *ssh.Client) error {
+	var(
+		Realsrc string
+		Realdst	string
+	)
+	sftpCli, err := sftp.NewClient(c)
+	if err != nil {
+		return err
+	}
+	defer sftpCli.Close()
+	Realsrc = RemoteRealpath(src,sftpCli)
+	Realdst = LocalRealPath(dst)
+	state, Serr := sftpCli.Stat(Realsrc)
+	if Serr != nil {
+		return Serr
+	}
+	if state.IsDir() {
+		return t.GetDir(Realsrc, Realdst, c)
+	} else {
+		Dstat, _ := os.Stat(Realdst)
+		if Dstat.IsDir() {
+			return t.GetFile(Realsrc, filepath.Join(Realdst, filepath.Base(src)), c)
+		} else {
+			return t.GetFile(Realsrc, Realdst, c)
+		}
+	}
+}
+
+func (t *SSHTerminal)Push(src, dst string, c *ssh.Client) error {
+	var (
+		Realsrc string
+		Realdst string
+	)
+
+	Realsrc = LocalRealPath(src)
+	Sstate, Serr := os.Stat(Realsrc)
+	if Serr != nil{
+		panic(Serr)
+	}
+	if Sstate.IsDir() {
+		return t.PushDir(Realsrc, dst, c)
+	} else {
+		sftpCli, err := sftp.NewClient(c)
+		if err != nil {
+			return err
+		}
+		defer sftpCli.Close()
+		Realdst = RemoteRealpath(dst,sftpCli)
+		Dstat, err := sftpCli.Stat(Realdst)
+		if err != nil{
+			panic(err)
+		}
+		if Dstat.IsDir() {
+			return t.PushFile(Realsrc, filepath.Join(Realdst, filepath.Base(Realsrc)), c)
+		} else {
+			return t.PushFile(Realsrc, Realdst, c)
+		}
+	}
+}
+
+
+func LocalRealPath(ph string) string {
+	sl := strings.Split(ph,"/")
+	if sl[0] == "~" {
+		s, ok := os.LookupEnv("HOME")
+		if !ok {
+			panic("Get $HOME Env Error!!")
+		}
+		sl[0] = s
+		return path.Join(sl...)
+	}
+	return ph
+}
+
+func RemoteRealpath(ph string, c *sftp.Client) string {
+	sl := strings.Split(ph,"/")
+	if sl[0] == "~" {
+		r, e := c.Getwd()
+		if e != nil {
+			panic("Get Remote $HOME Error!!")
+		}
+		sl[0] = r
+		return path.Join(sl...)
+	}
+	return ph
 }
