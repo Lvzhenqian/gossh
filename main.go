@@ -9,6 +9,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"gossh/conf"
 	"gossh/sshtool"
+	"io"
 	"log"
 	"os"
 	"os/user"
@@ -27,6 +28,7 @@ var (
 
 	s bool
 	h bool
+	c string
 )
 
 func init() {
@@ -63,14 +65,15 @@ func init() {
 
 	flag.BoolVar(&h, "h", false, "显示这个帮助页面")
 	flag.BoolVar(&s, "s", false, "查看当前有那些主机，并显示对应的Index ID")
+	flag.StringVar(&c, "c", "", "执行命令，以Index:CMD 来对某台机器执行ssh命令")
 	flag.Usage = Usage
 }
 
 func Usage() {
 	fmt.Fprintf(os.Stderr, `使用说明：
   gossh run@index command  对index的主机执行某条命令
-  gossh send@index src dst   推送src到index主机的dst位置
-  gossh get@index src dst   从index主机src位置拉取到本地dst位置
+  gossh user@index:path path  从远程拉取到本地
+  gossh path user@index:path  从本地推送到远程
 其他参数:
 `)
 
@@ -202,15 +205,6 @@ func NewClient(c conf.SshConfig) *ssh.Client {
 	return client
 }
 
-func GetConfig(keyword string) (string, conf.SshConfig) {
-	s := strings.Split(keyword, "@")
-	index, err := strconv.Atoi(s[1])
-	if err != nil {
-		panic("请输入对应的配置文件ID!!")
-	}
-	return s[0], cfg[index].Data
-}
-
 func ShowIdAndName() {
 	for i, v := range cfg {
 		fmt.Printf("index：%d name: %s \n", i, v.Name)
@@ -220,45 +214,74 @@ func ShowIdAndName() {
 func main() {
 	flag.Parse()
 	args := flag.Args()
-	//fmt.Println(args)
-	if h {
+	switch {
+	case h:
 		flag.Usage()
-		os.Exit(0)
-	}
-	if s {
+	case s:
 		ShowIdAndName()
-		os.Exit(0)
-	}
-
-	if flag.NArg() == 0 {
+	case c != "":
+		if !strings.Contains(c, ":") {
+			panic("Error,not address or cmd in strings")
+		}
+		s := strings.Split(c, ":")
+		index, _ := strconv.Atoi(s[0])
+		cli := NewClient(cfg[index].Data)
+		defer cli.Close()
+		err := Ssh.Run(s[1], cli)
+		if err != nil {
+			panic(err)
+		}
+	case flag.NArg() == 2:
+		// username@address:path
+		var (
+			src, dst = args[0], args[1]
+		)
+		switch {
+		case strings.Contains(src, ":"):
+			if strings.Contains(src, "@") {
+				panic("not found!!")
+			} else {
+				s := strings.Split(src, ":")
+				index, err := strconv.Atoi(s[0])
+				if err != nil {
+					panic("请输入对应的配置文件ID!!")
+				}
+				cli := NewClient(cfg[index].Data)
+				defer cli.Close()
+				SshErr := Ssh.Get(s[1], dst, cli)
+				if SshErr != nil {
+					panic(err)
+				}
+			}
+		case strings.Contains(dst, ":"):
+			if strings.Contains(dst, "@") {
+				panic("not found!!")
+			} else {
+				s := strings.Split(dst, ":")
+				index, err := strconv.Atoi(s[0])
+				if err != nil {
+					panic("请输入对应的配置文件ID!!")
+				}
+				cli := NewClient(cfg[index].Data)
+				defer cli.Close()
+				SshErr := Ssh.Push(src, s[1], cli)
+				if SshErr != nil {
+					panic(err)
+				}
+			}
+		default:
+			s, _ := os.Open(src)
+			defer s.Close()
+			d, _ := os.Create(dst)
+			defer d.Close()
+			_, e := io.Copy(d, s)
+			if e != nil {
+				panic(e)
+			}
+		}
+	default:
 		conf := ShowList()
 		cli := NewClient(conf)
 		defer cli.Close()
-		Ssh.Login(cli)
-	} else {
-		key, c := GetConfig(args[0])
-		cli := NewClient(c)
-		defer cli.Close()
-		switch strings.ToLower(key) {
-		case "send":
-			err := Ssh.Push(args[1], args[2], cli)
-			if err != nil {
-				panic(err)
-			}
-		case "get":
-			err := Ssh.Get(args[1], args[2], cli)
-			if err != nil {
-				panic(err)
-			}
-		case "run":
-			cmd := strings.Join(args[1:], " ")
-			err := Ssh.Run(cmd, cli)
-			if err != nil {
-				log.Fatal(err)
-			}
-		default:
-			fmt.Println("错误的关键字，请按下列例子来使用！！")
-			Usage()
-		}
 	}
 }
