@@ -283,5 +283,6 @@ func main() {
 		conf := ShowList()
 		cli := NewClient(conf)
 		defer cli.Close()
+		Ssh.Login(cli)
 	}
 }
