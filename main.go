@@ -8,7 +8,7 @@ import (
 	"github.com/mewbak/gopass"
 	"golang.org/x/crypto/ssh"
 	"gossh/conf"
-	"gossh/sshtool"
+	"github.com/Lvzhenqian/sshtool"
 	"io"
 	"log"
 	"os"
@@ -149,8 +149,7 @@ func ShowList() conf.SshConfig {
 			}
 		}
 	} else {
-		for i, v := range cfg {
-			fmt.Printf("%T, %T", i, v.Name)
+		for _, v := range cfg {
 			list = append(list, v.Name)
 		}
 	}

@@ -1,21 +1,18 @@
 package kingpin
 
-// Action callback triggered during parsing.
-//
-// "element" is the flag, argument or command associated with the callback. It contains the Clause
-// and string value, if any.
-//
-// "context" contains the full parse context, including all other elements that have been parsed.
-type Action func(element *ParseElement, context *ParseContext) error
-
-type actionApplier interface {
-	applyActions(*ParseElement, *ParseContext) error
-	applyPreActions(*ParseElement, *ParseContext) error
-}
+// Action callback executed at various stages after all values are populated.
+// The application, commands, arguments and flags all have corresponding
+// actions.
+type Action func(*ParseContext) error
 
 type actionMixin struct {
 	actions    []Action
 	preActions []Action
+}
+
+type actionApplier interface {
+	applyActions(*ParseContext) error
+	applyPreActions(*ParseContext) error
 }
 
 func (a *actionMixin) addAction(action Action) {
@@ -23,21 +20,21 @@ func (a *actionMixin) addAction(action Action) {
 }
 
 func (a *actionMixin) addPreAction(action Action) {
-	a.actions = append(a.actions, action)
+	a.preActions = append(a.preActions, action)
 }
 
-func (a *actionMixin) applyActions(element *ParseElement, context *ParseContext) error {
+func (a *actionMixin) applyActions(context *ParseContext) error {
 	for _, action := range a.actions {
-		if err := action(element, context); err != nil {
+		if err := action(context); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (a *actionMixin) applyPreActions(element *ParseElement, context *ParseContext) error {
+func (a *actionMixin) applyPreActions(context *ParseContext) error {
 	for _, preAction := range a.preActions {
-		if err := preAction(element, context); err != nil {
+		if err := preAction(context); err != nil {
 			return err
 		}
 	}
