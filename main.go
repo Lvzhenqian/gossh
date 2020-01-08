@@ -226,7 +226,7 @@ func main() {
 		index, _ := strconv.Atoi(s[0])
 		cli := NewClient(cfg[index].Data)
 		defer cli.Close()
-		err := Ssh.Run(s[1], cli)
+		err := Ssh.Run(s[1],os.Stdout, cli)
 		if err != nil {
 			panic(err)
 		}
