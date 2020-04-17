@@ -4,11 +4,11 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
-	"github.com/manifoldco/promptui"
-	"github.com/mewbak/gopass"
+	"github.com/AlecAivazis/survey/v2"
+	"github.com/AlecAivazis/survey/v2/terminal"
+	"github.com/Lvzhenqian/sshtool"
 	"golang.org/x/crypto/ssh"
 	"gossh/conf"
-	"github.com/Lvzhenqian/sshtool"
 	"io"
 	"log"
 	"os"
@@ -96,32 +96,59 @@ func DecodePassword(s string) string {
 
 func AddOneConfig() (name string, e error) {
 	var c conf.Node
-	fmt.Printf("名称：")
-	fmt.Scanln(&c.Name)
-	fmt.Printf("ip地址：")
-	fmt.Scanln(&c.Data.IP)
+	title := &survey.Input{
+		Message:  "名称：",
+	}
+	survey.AskOne(title,&c.Name)
+
+	address := &survey.Input{
+		Message:  "ip地址：",
+	}
+	survey.AskOne(address,&c.Data.IP)
+
 	for {
-		fmt.Printf("端口号：")
-		if _, e := fmt.Scanln(&c.Data.Port); e != nil {
+		var p string
+		port := &survey.Input{
+			Message:  "端口号：",
+			Default: "22",
+		}
+		survey.AskOne(port,&p)
+		if v,e := strconv.Atoi(p); e == nil{
+			c.Data.Port = v
+			break
+		} else {
 			fmt.Printf("\r")
 			fmt.Println("请输入数字！！")
-		} else {
-			break
 		}
 	}
-	fmt.Printf("用户名：")
-	fmt.Scanln(&c.Data.Username)
-	if p, e := gopass.GetPass("密码："); e != nil || p == "" {
+
+	u := &survey.Input{
+		Message:  "用户名：",
+		Default: "root",
+	}
+	survey.AskOne(u,&c.Data.Username)
+
+	var p string
+	prompt := &survey.Password{
+		Message:  "密码：",
+	}
+	survey.AskOne(prompt,&p)
+	if p == ""{
 		c.Data.Password = ""
-	} else {
+	}else {
 		c.Data.Password = EncodePassword(p)
 	}
-	fmt.Printf("私钥路径：")
-	if _, e := fmt.Scanln(&c.Data.PrivateKey); e != nil {
-		c.Data.PrivateKey = ""
+	pk := &survey.Input{
+		Message:  "私钥路径：",
 	}
-	fmt.Printf("备注：")
-	fmt.Scanln(&c.Detail)
+	survey.AskOne(pk,&c.Data.PrivateKey)
+
+	details := &survey.Input{
+		Message:  "备注：",
+	}
+	survey.AskOne(details,&c.Detail)
+
+
 	c.Id = len(cfg)
 	cfg = append(cfg, c)
 	err := conf.Write(&cfg, ConfigPath)
@@ -133,12 +160,12 @@ func AddOneConfig() (name string, e error) {
 }
 
 func ShowList() conf.SshConfig {
-	index := -1
+	//index := -1
 	var result string
 	var err error
 	// 转为字符串slice
 	var list []string
-	list = append(list, "exit")
+	list = append(list, "新增")
 	if len(cfg) == 0 {
 		fmt.Println("配置文件为空，请先填写一个！！")
 		n, err := AddOneConfig()
@@ -153,18 +180,21 @@ func ShowList() conf.SshConfig {
 			list = append(list, v.Name)
 		}
 	}
-
-	// 使用promptui 来显示菜单
-	for index < 0 {
-		prompt := promptui.SelectWithAdd{
-			Label:    "选择你要登陆的主机：",
-			Items:    list,
-			AddLabel: "新增",
+	for {
+		prompt := &survey.Select{
+			Message: "选择你要登陆的主机：",
+			Options: list,
+			Default: "新增",
+		}
+		AskErr := survey.AskOne(prompt, &result)
+		if AskErr == terminal.InterruptErr {
+			os.Exit(0)
+		} else if AskErr != nil {
+			log.Fatal(err)
+			return conf.SshConfig{}
 		}
 
-		index, result, err = prompt.Run()
-
-		if index == -1 {
+		if result == "新增" {
 			n, err := AddOneConfig()
 			if err == nil {
 				list = append(list, n)
@@ -172,19 +202,34 @@ func ShowList() conf.SshConfig {
 					log.Fatal("回写配置文件失败！")
 				}
 			}
+		} else {
+			break
 		}
 	}
 
-	if err != nil {
-		log.Fatal(err)
-		return conf.SshConfig{}
-	}
-	if result == "exit" {
-		os.Exit(0)
-	}
+	// 使用promptui 来显示菜单
+	//for index < 0 {
+	//	prompt := promptui.SelectWithAdd{
+	//		Label:    "选择你要登陆的主机：",
+	//		Items:    list,
+	//		AddLabel: "新增",
+	//	}
+	//
+	//	index, result, err = prompt.Run()
+	//
+	//	if index == -1 {
+	//		n, err := AddOneConfig()
+	//		if err == nil {
+	//			list = append(list, n)
+	//			if err := conf.Write(&cfg, ConfigPath); err != nil {
+	//				log.Fatal("回写配置文件失败！")
+	//			}
+	//		}
+	//	}
+	//}
+
 	// 输出对应的sshConfig
 	for _, v := range cfg {
-
 		if v.Name == result {
 			return v.Data
 		}
@@ -226,7 +271,7 @@ func main() {
 		index, _ := strconv.Atoi(s[0])
 		cli := NewClient(cfg[index].Data)
 		defer cli.Close()
-		err := Ssh.Run(s[1],os.Stdout, cli)
+		err := Ssh.Run(s[1], os.Stdout, cli)
 		if err != nil {
 			panic(err)
 		}
