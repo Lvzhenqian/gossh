@@ -4,7 +4,7 @@ go 1.13
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.0.7
-	github.com/Lvzhenqian/sshtool v0.1.2
+	github.com/Lvzhenqian/sshtool v0.1.5
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/mattn/go-runewidth v0.0.7 // indirect
 	golang.org/x/crypto v0.0.0-20191227163750-53104e6ec876

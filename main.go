@@ -29,6 +29,7 @@ var (
 	s bool
 	h bool
 	c string
+	a string
 )
 
 func init() {
@@ -66,6 +67,7 @@ func init() {
 	flag.BoolVar(&h, "h", false, "显示这个帮助页面")
 	flag.BoolVar(&s, "s", false, "查看当前有那些主机，并显示对应的Index ID")
 	flag.StringVar(&c, "c", "", "执行命令，以Index:CMD 来对某台机器执行ssh命令")
+	flag.StringVar(&a, "a", "", "所有服务器执行命令CMD")
 	flag.Usage = Usage
 }
 
@@ -97,23 +99,23 @@ func DecodePassword(s string) string {
 func AddOneConfig() (name string, e error) {
 	var c conf.Node
 	title := &survey.Input{
-		Message:  "名称：",
+		Message: "名称：",
 	}
-	survey.AskOne(title,&c.Name)
+	survey.AskOne(title, &c.Name)
 
 	address := &survey.Input{
-		Message:  "ip地址：",
+		Message: "ip地址：",
 	}
-	survey.AskOne(address,&c.Data.IP)
+	survey.AskOne(address, &c.Data.IP)
 
 	for {
 		var p string
 		port := &survey.Input{
-			Message:  "端口号：",
+			Message: "端口号：",
 			Default: "22",
 		}
-		survey.AskOne(port,&p)
-		if v,e := strconv.Atoi(p); e == nil{
+		survey.AskOne(port, &p)
+		if v, e := strconv.Atoi(p); e == nil {
 			c.Data.Port = v
 			break
 		} else {
@@ -123,31 +125,30 @@ func AddOneConfig() (name string, e error) {
 	}
 
 	u := &survey.Input{
-		Message:  "用户名：",
+		Message: "用户名：",
 		Default: "root",
 	}
-	survey.AskOne(u,&c.Data.Username)
+	survey.AskOne(u, &c.Data.Username)
 
 	var p string
 	prompt := &survey.Password{
-		Message:  "密码：",
+		Message: "密码：",
 	}
-	survey.AskOne(prompt,&p)
-	if p == ""{
+	survey.AskOne(prompt, &p)
+	if p == "" {
 		c.Data.Password = ""
-	}else {
+	} else {
 		c.Data.Password = EncodePassword(p)
 	}
 	pk := &survey.Input{
-		Message:  "私钥路径：",
+		Message: "私钥路径：",
 	}
-	survey.AskOne(pk,&c.Data.PrivateKey)
+	survey.AskOne(pk, &c.Data.PrivateKey)
 
 	details := &survey.Input{
-		Message:  "备注：",
+		Message: "备注：",
 	}
-	survey.AskOne(details,&c.Detail)
-
+	survey.AskOne(details, &c.Detail)
 
 	c.Id = len(cfg)
 	cfg = append(cfg, c)
@@ -263,6 +264,12 @@ func main() {
 		flag.Usage()
 	case s:
 		ShowIdAndName()
+	case a != "":
+		for i := 0; i < len(cfg); i++ {
+			cli := NewClient(cfg[i].Data)
+			defer cli.Close()
+			Ssh.Run(a, os.Stdout, cli)
+		}
 	case c != "":
 		if !strings.Contains(c, ":") {
 			panic("Error,not address or cmd in strings")
